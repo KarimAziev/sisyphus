@@ -1,4 +1,4 @@
-* v0.2.0    2023-04-18
+* v0.2.1    2023-04-18
 - add custom variable ~sisyphus-transient-suffixes~
 - remove extra dependencies
 - allow file extension in changelog files
