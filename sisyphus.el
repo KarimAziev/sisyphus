@@ -1,20 +1,14 @@
-;;; sisyphus.el --- Create releases of Emacs packages  -*- lexical-binding:t -*-
+;;; sisyphus.el --- Create releases packages -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2022-2023 Jonas Bernoulli
 
 ;; Author: Jonas Bernoulli <jonas@bernoul.li>
+;;         Karim Aziiev <karim.aziiev@gmail.com>
 ;; Homepage: https://github.com/magit/sisyphus
 ;; Keywords: git tools vc
 
 ;; Package-Version: 0.1.0.50-git
-;; Package-Requires: (
-;;     (emacs "27.1")
-;;     (compat "29.1.3.4")
-;;     (elx "1.6.0")
-;;     (llama "0.3.0")
-;;     (magit "3.4.0"))
-
-;; SPDX-License-Identifier: GPL-3.0-or-later
+;; Package-Requires: ((emacs "28.1") (compat "29.1.4.1") (magit "3.4.0"))
 
 ;; This file is free software: you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published
@@ -39,24 +33,135 @@
 ;;; Code:
 
 (require 'compat)
-(require 'llama)
-
 (require 'copyright)
-(require 'elx)
 (require 'magit-tag)
 
-;;; Key Bindings
+(declare-function lm-with-file "lisp-mnt")
+(declare-function lm-header "lisp-mnt")
 
-(transient-insert-suffix 'magit-tag "r"
-  '("c" "release commit" sisyphus-create-release))
 
-(transient-suffix-put 'magit-tag "r" :description "release tag")
+(defcustom sisyphus-transient-suffixes '(("c" "release commit"
+                                        sisyphus-create-release)
+                                       ("g" "post release commit"
+                                        sisyphus-bump-post-release)
+                                       ("y" "bump copyright years"
+                                        sisyphus-bump-copyright))
+  "Suffixes to add in `magit-tag'."
+  :group 'sisyphus
+  :type '(repeat (list :tag "Rule"
+		                   (string :tag "Key")
+		                   (string :tag "Description")
+                       (radio :tag "Command"
+                              (function-item sisyphus-create-release)
+                              (function-item sisyphus-bump-post-release)
+                              (function-item sisyphus-bump-copyright)))))
 
-(transient-append-suffix 'magit-tag "r"
-  '("g" "post release commit"  sisyphus-bump-post-release))
 
-(transient-append-suffix 'magit-tag "g"
-  '("y" "bump copyright years" sisyphus-bump-copyright))
+(defun sisyphus-transient-suffixes-watcher (_symbol newval _operation _buffer)
+  "Variable watcher to update transient prefix `magit-tag' with NEWVAL."
+  (let* ((layout (get 'magit-tag 'transient--layout))
+         (len (length layout)))
+    (when-let ((suffix-idx (catch 'found
+                             (dotimes (idx len)
+                               (let ((group (nth idx layout)))
+                                 (print group)
+                                 (when (and (vectorp group)
+                                            (eq :description
+                                                (car-safe (aref group 2)))
+                                            (equal
+                                             (cadr (aref group 2))
+                                             "Sisyphus"))
+                                   (throw 'found idx)))))))
+      (transient-remove-suffix 'magit-tag (list suffix-idx))))
+  (when newval
+    (transient-append-suffix 'magit-tag
+      (list
+       (let ((i (1- (length (get 'magit-tag 'transient--layout)))))
+         (if (>= i 0)
+             i
+           0)))
+      (apply #'vector
+             (append
+              (list "Sisyphus")
+              newval)))))
+
+(add-variable-watcher 'sisyphus-transient-suffixes
+                      'sisyphus-transient-suffixes-watcher)
+
+(sisyphus-transient-suffixes-watcher nil sisyphus-transient-suffixes nil nil)
+
+
+(defun sisyphus-header-multiline (header &optional extra)
+  "Return the contents of the header named HEADER, with continuation lines.
+The returned value is a list of strings, one per line.
+
+If optional EXTRA is non-nil, then return (LINES BEG END INDENT),
+where INDENT is either nil, if the value was specified on a
+single line, or the prefix used on continuation lines."
+  (save-excursion
+    (goto-char (point-min))
+    (let ((lines (lm-header header))
+          (beg (line-beginning-position))
+          (end (1+ (line-end-position)))
+          (indent nil))
+      (when lines
+	(setq lines (list lines))
+	(forward-line 1)
+	(while (looking-at "^;+\\(\t\\|[\t\s]\\{2,\\}\\)\\(.+\\)")
+	  (push (match-string-no-properties 2) lines)
+          (unless indent
+            (setq indent (match-string-no-properties 1)))
+	  (forward-line 1)
+          (setq end (point)))
+        (setq lines (nreverse lines))
+        (if extra (list lines beg end indent) lines)))))
+
+
+
+(defun sisyphus-package-requires (&optional file extra)
+  "Extract the value of the Package-Requires header in the FILE.
+If optional EXTRA is non-nil, then return (VALUE BEG END INDENT),
+where INDENT is either nil, if the value was specified on a
+single line, or the prefix used on continuation lines."
+  (pcase-let ((`(,lines ,beg ,end ,indent)
+               (lm-with-file file
+                 (sisyphus-header-multiline "package-requires" t))))
+    (and-let* ((lines lines)
+               (value (package--prepare-dependencies
+                       (package-read-from-string
+                        (mapconcat #'identity lines " ")))))
+      (if extra (list value beg end indent) value))))
+
+(defun sisyphus-update-package-requires (&optional file updates noerror)
+  "Update Package-Requires with UPDATES in FILE.
+If Package-Requires is not found, signal an error, unless NOERROR is non nil."
+  (pcase-let* ((`(,value ,beg ,end ,_i)
+                (sisyphus-package-requires file t)))
+    (if (not value)
+        (unless noerror
+          (error "Cannot update Package-Requires; cannot be found"))
+      (setq value (sisyphus-update-dependencies value updates))
+      (save-excursion
+        (goto-char beg)
+        (delete-region beg end)
+        (insert ";; Package-Requires: " (prin1-to-string updates))))))
+
+
+(defun sisyphus-update-dependencies (value updates)
+  "Update dependencies VALUE with UPDATES."
+  (pcase-dolist (`(,pkg ,ver) updates)
+    (when (alist-get pkg value)
+      (setf (alist-get pkg value)
+            (list ver))))
+  (cl-sort value
+           (lambda (a b)
+             (pcase (list a b)
+               (`(emacs ,_) t)
+               (`(,_ emacs) nil)
+               (`(compat ,_) t)
+               (`(,_ compat) nil)
+               (_ (string< a b))))
+           :key #'car))
 
 ;;; Variables
 
@@ -67,7 +172,7 @@
 
 ;;;###autoload
 (defun sisyphus-create-release (version &optional nocommit)
-  "Create a release commit, bumping version strings.
+  "Create a release commit, bumping VERSION strings.
 With prefix argument NOCOMMIT, do not create a commit."
   (interactive (list (sisyphus--read-version)))
   (magit-with-toplevel
@@ -80,7 +185,7 @@ With prefix argument NOCOMMIT, do not create a commit."
 
 ;;;###autoload
 (defun sisyphus-bump-post-release (version &optional nocommit)
-  "Create a post-release commit, bumping version strings.
+  "Create a post-release commit, bumping VERSION strings.
 With prefix argument NOCOMMIT, do not create a commit."
   (interactive (list (and (file-exists-p (expand-file-name "CHANGELOG"))
                           (sisyphus--read-version "Tentative next release"))
@@ -109,6 +214,7 @@ With prefix argument NOCOMMIT, do not create a commit."
 ;;; Macros
 
 (defmacro sisyphus--with-file (file &rest body)
+  "Execute BODY in the FILE buffer."
   (declare (indent 1))
   (let ((file* (gensym "file"))
         (open* (gensym "open")))
@@ -125,19 +231,29 @@ With prefix argument NOCOMMIT, do not create a commit."
 ;;; Functions
 
 (defun sisyphus--package-name ()
+  "Return file name of the current repository sans its directory."
   (file-name-nondirectory (directory-file-name (magit-toplevel))))
 
 (defun sisyphus--previous-version ()
+  "Return the highest release version."
   (caar (magit--list-releases)))
 
+(defun sisyphus-resolve-changelog-file ()
+  "Return absolute path to changelog in the current VC tree."
+  (when-let* ((dir (magit-toplevel))
+              (file (car (directory-files dir nil "CHANGELOG"))))
+    (expand-file-name file dir)))
+
 (defun sisyphus--get-changelog-version ()
-  (let ((file (expand-file-name "CHANGELOG")))
+  "Search for latest version in the changelog file."
+  (when-let ((file (sisyphus-resolve-changelog-file)))
     (and (file-exists-p file)
          (sisyphus--with-file file
            (and (re-search-forward "^\\* v\\([^ ]+\\)" nil t)
                 (match-string-no-properties 1))))))
 
 (defun sisyphus--read-version (&optional prompt)
+  "Read a version from the minibuffer, prompting with string PROMPT."
   (let* ((prev (sisyphus--previous-version))
          (next (sisyphus--get-changelog-version))
          (version (read-string
@@ -162,7 +278,21 @@ With prefix argument NOCOMMIT, do not create a commit."
     version))
 
 (defun sisyphus--bump-changelog (version &optional stub)
-  (let ((file (expand-file-name "CHANGELOG")))
+  "Update VERSION in changelog.
+If STUB is non nil, insert as unreleased."
+  (when-let* ((dir (magit-toplevel))
+              (file (or (sisyphus-resolve-changelog-file)
+                        (when (yes-or-no-p (format
+                                            "Create changelog file %s?"
+                                            (abbreviate-file-name
+                                             (expand-file-name
+                                              "CHANGELOG.org"
+                                              dir))))
+                          (expand-file-name "CHANGELOG.org" dir)))))
+    (unless (file-exists-p file)
+      (when-let ((prev (sisyphus--previous-version)))
+        (write-region (format "* v%-9sUNRELEASED\n\n" version) nil
+                      file)))
     (when (file-exists-p file)
       (sisyphus--with-file file
         (if (re-search-forward "^\\* v\\([^ ]+\\) +\\(.+\\)$" nil t)
@@ -171,27 +301,29 @@ With prefix argument NOCOMMIT, do not create a commit."
                   (prev (sisyphus--previous-version))
                   (today (format-time-string "%F")))
               (goto-char (line-beginning-position))
-              (cond
-               (stub
-                (insert (format "* v%-9sUNRELEASED\n\n" version)))
-               ((equal vers prev)
-                (insert (format "* v%-9s%s\n\n" version today))
-                (user-error "CHANGELOG entry missing; inserting stub"))
-               ((equal vers version)
-                (unless (equal date today)
-                  (replace-match today nil t nil 2)))
-               ((y-or-n-p
-                 (format "%sCHANGELOG version is %s, change%s to %s"
-                         (if prev (format "Previous version is %s, " prev) "")
-                         vers
-                         (if prev " latter" "")
-                         version))
-                (delete-region (point) (line-end-position))
-                (insert (format "* v%-9s%s" version today)))
-               ((user-error "Abort"))))
+              (cond (stub
+                     (insert (format "* v%-9sUNRELEASED\n\n" version)))
+                    ((equal vers prev)
+                     (insert (format "* v%-9s%s\n\n" version today))
+                     (user-error "CHANGELOG entry missing; inserting stub"))
+                    ((equal vers version)
+                     (unless (equal date today)
+                       (replace-match today nil t nil 2)))
+                    ((y-or-n-p
+                      (format "%sCHANGELOG version is %s, change%s to %s?"
+                              (if prev
+                                  (format "Previous version is %s, " prev) "")
+                              vers
+                              (if prev " latter" "")
+                              version))
+                     (delete-region (point)
+                                    (line-end-position))
+                     (insert (format "* v%-9s%s" version today)))
+                    ((user-error "Abort"))))
           (user-error "Unsupported CHANGELOG format"))))))
 
 (defun sisyphus--list-files ()
+  "Return nested list of elisp libraries, packages and org files."
   (let* ((lisp (if (file-directory-p "lisp") "lisp" "."))
          (docs (if (file-directory-p "docs") "docs" "."))
          (pkgs (nconc (directory-files lisp t "-pkg\\.el\\'")
@@ -199,12 +331,25 @@ With prefix argument NOCOMMIT, do not create a commit."
                            (directory-files "." t "-pkg\\.el\\'"))))
          (libs (cl-set-difference (directory-files lisp t "\\.el\\'") pkgs))
          (orgs (cl-delete "README.org" (directory-files docs t "\\.org\\'")
-                          :test #'equal :key #'file-name-nondirectory)))
+                          :test #'equal
+                          :key #'file-name-nondirectory)))
     (list libs pkgs orgs)))
 
+(defun sisyphus--rpartial (fun &rest args)
+  "Return a partial application of FUN to right-hand ARGS.
+
+ARGS is a list of the last N arguments to pass to FUN. The result is a new
+function which does the same as FUN, except that the last N arguments are fixed
+at the values with which this function was called."
+  (declare (side-effect-free t))
+  (lambda (&rest pre-args)
+    (apply fun (append pre-args args))))
+
 (defun sisyphus--bump-version (version)
+  "Bump VERSION."
   (pcase-let*
-      ((`(,libs ,pkgs ,orgs) (sisyphus--list-files))
+      ((`(,libs ,pkgs ,orgs)
+        (sisyphus--list-files))
        (updates (mapcar (lambda (lib)
                           (list (intern
                                  (file-name-sans-extension
@@ -213,14 +358,21 @@ With prefix argument NOCOMMIT, do not create a commit."
                         libs))
        (pkg-updates (if (string-suffix-p sisyphus--non-release-suffix version)
                         (let ((timestamp (format-time-string "%Y%m%d")))
-                          (mapcar (pcase-lambda (`(,pkg ,_)) (list pkg timestamp))
+                          (mapcar (pcase-lambda (`(,pkg ,_))
+                                    (list pkg timestamp))
                                   updates))
                       updates)))
-    (mapc (##sisyphus--bump-version-pkg % version pkg-updates) pkgs)
-    (mapc (##sisyphus--bump-version-lib % version updates) libs)
-    (mapc (##sisyphus--bump-version-org % version) orgs)))
+    (mapc
+     (sisyphus--rpartial #'sisyphus--bump-version-pkg version pkg-updates)
+     pkgs)
+    (mapc (sisyphus--rpartial #'sisyphus--bump-version-lib version updates)
+          libs)
+    (mapc (sisyphus--rpartial #'sisyphus--bump-version-org version)
+          orgs)))
 
 (defun sisyphus--bump-version-pkg (file version updates)
+  "Write `define-package' form in FILE with VERSION and UPDATES.
+UPDATES should be the alist of dependencies."
   (sisyphus--with-file file
     (pcase-let* ((`(,_ ,name ,_ ,docstring ,deps . ,props)
                   (read (current-buffer)))
@@ -229,15 +381,20 @@ With prefix argument NOCOMMIT, do not create a commit."
       (insert (format "(define-package %S %S\n  %S\n  '("
                       name version docstring))
       (when deps
-        (setq deps (elx--update-dependencies deps updates))
+        (setq deps (sisyphus-update-dependencies deps updates))
         (let ((dep nil)
               (format
                (format "(%%-%is %%S)"
                        (apply #'max
-                              (mapcar (##length (symbol-name (car %))) deps)))))
+                              (mapcar (lambda
+                                        (%)
+                                        (length
+                                         (symbol-name
+                                          (car %)))) deps)))))
           (while (setq dep (pop deps))
             (indent-to 4)
-            (insert (format format (car dep) (cadr dep)))
+            (insert (format format (car dep)
+                            (cadr dep)))
             (when deps (insert "\n")))))
       (insert ")")
       (when props
@@ -247,9 +404,17 @@ With prefix argument NOCOMMIT, do not create a commit."
       (insert ")\n"))))
 
 (defun sisyphus--bump-version-lib (file version updates)
+  "Update VERSION and package requires with UPDATES in the FILE."
+  (require 'lisp-mnt)
   (sisyphus--with-file file
     (when (lm-header "Package-Version")
-      (delete-region (point) (line-end-position))
+      (delete-region (point)
+                     (line-end-position))
+      (insert version)
+      (goto-char (point-min)))
+    (when (lm-header "Version")
+      (delete-region (point)
+                     (line-end-position))
       (insert version)
       (goto-char (point-min)))
     (when (re-search-forward
@@ -260,7 +425,7 @@ With prefix argument NOCOMMIT, do not create a commit."
       (replace-match version nil t nil 1)
       (goto-char (point-min)))
     (unless (string-suffix-p "-git" version)
-      (elx-update-package-requires nil updates nil t)
+      (sisyphus-update-package-requires nil updates nil)
       (let ((prev (sisyphus--previous-version)))
         (while (re-search-forward
                 ":package-version '([^ ]+ +\\. +\"\\([^\"]+\\)\")" nil t)
@@ -271,6 +436,7 @@ With prefix argument NOCOMMIT, do not create a commit."
     (save-buffer)))
 
 (defun sisyphus--bump-version-org (file version)
+  "Update VERSION in org FILE."
   (sisyphus--with-file file
     (re-search-forward "^#\\+subtitle: for version \\(.+\\)$")
     (replace-match version t t nil 1)
@@ -279,18 +445,22 @@ With prefix argument NOCOMMIT, do not create a commit."
   (magit-call-process "make" "texi"))
 
 (defun sisyphus--bump-copyright ()
-  (pcase-let ((`(,libs ,_ ,orgs) (sisyphus--list-files)))
-    (mapc (##sisyphus--bump-copyright-lib %) libs)
+  "Update copyright."
+  (pcase-let ((`(,libs ,_ ,orgs)
+               (sisyphus--list-files)))
+    (mapc #'sisyphus--bump-copyright-lib libs)
     (when orgs
       (magit-call-process "make" "clean" "texi" "all"))))
 
 (defun sisyphus--bump-copyright-lib (file)
+  "Update copyright notice in FILE to indicate the current year."
   (sisyphus--with-file file
     (let ((copyright-update t)
           (copyright-query nil))
       (copyright-update))))
 
 (defun sisyphus--commit (msg &optional allow-empty)
+  "Create commit with MSG, possible with ALLOW-EMPTY flag."
   (let ((magit-inhibit-refresh t))
     (magit-stage-1 "-u"))
   (magit-commit-create
@@ -303,8 +473,11 @@ With prefix argument NOCOMMIT, do not create a commit."
          (and allow-empty "--allow-empty"))))
 
 ;;; _
-(provide 'sisyphus)
+
 ;; Local Variables:
 ;; indent-tabs-mode: nil
+;; checkdoc-verb-check-experimental-flag: nil
 ;; End:
+;;; sisyphus.el ends here
+(provide 'sisyphus)
 ;;; sisyphus.el ends here

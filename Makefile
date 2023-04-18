@@ -7,8 +7,6 @@ ELCS  = $(ELS:.el=.elc)
 
 DEPS  = compat
 DEPS += dash
-DEPS += elx
-DEPS += llama
 DEPS += magit/lisp
 DEPS += transient/lisp
 DEPS += with-editor/lisp
