@@ -134,16 +134,17 @@ single line, or the prefix used on continuation lines."
 (defun sisyphus-update-package-requires (&optional file updates noerror)
   "Update Package-Requires with UPDATES in FILE.
 If Package-Requires is not found, signal an error, unless NOERROR is non nil."
-  (pcase-let* ((`(,value ,beg ,end ,_i)
-                (sisyphus-package-requires file t)))
-    (if (not value)
-        (unless noerror
-          (error "Cannot update Package-Requires; cannot be found"))
-      (setq value (sisyphus-update-dependencies value updates))
-      (save-excursion
-        (goto-char beg)
-        (delete-region beg end)
-        (insert ";; Package-Requires: " (prin1-to-string updates))))))
+  (when updates
+    (pcase-let* ((`(,value ,beg ,end ,_i)
+                  (sisyphus-package-requires file t)))
+      (if (not value)
+          (unless noerror
+            (error "Cannot update Package-Requires; cannot be found"))
+        (setq value (sisyphus-update-dependencies value updates))
+        (save-excursion
+          (goto-char beg)
+          (delete-region beg end)
+          (insert ";; Package-Requires: " (prin1-to-string updates) "\n"))))))
 
 
 (defun sisyphus-update-dependencies (value updates)
@@ -426,7 +427,7 @@ UPDATES should be the alist of dependencies."
       (replace-match version nil t nil 1)
       (goto-char (point-min)))
     (unless (string-suffix-p "-git" version)
-      (sisyphus-update-package-requires nil updates nil)
+      (sisyphus-update-package-requires nil updates t)
       (let ((prev (sisyphus--previous-version)))
         (while (re-search-forward
                 ":package-version '([^ ]+ +\\. +\"\\([^\"]+\\)\")" nil t)
