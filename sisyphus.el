@@ -9,6 +9,7 @@
 
 ;; Package-Version: 0.2.1
 ;; Package-Requires: ((emacs "28.1") (compat "29.1.4.1"))
+
 ;; This file is free software: you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published
 ;; by the Free Software Foundation, either version 3 of the License,
@@ -35,9 +36,8 @@
 (require 'copyright)
 (require 'magit-tag)
 
-(declare-function lm-with-file "lisp-mnt")
-(declare-function lm-header "lisp-mnt")
 
+(require 'lisp-mnt)
 
 (defcustom sisyphus-transient-suffixes '(("c" "release commit"
                                         sisyphus-create-release)
@@ -291,7 +291,7 @@ If STUB is non nil, insert as unreleased."
                           (expand-file-name "CHANGELOG.org" dir)))))
     (unless (file-exists-p file)
       (when-let ((prev (sisyphus--previous-version)))
-        (write-region (format "* v%-9sUNRELEASED\n\n" version) nil
+        (write-region (format "* v%-9sUNRELEASED\n\n" prev) nil
                       file)))
     (when (file-exists-p file)
       (sisyphus--with-file file
@@ -320,7 +320,7 @@ If STUB is non nil, insert as unreleased."
                                     (line-end-position))
                      (insert (format "* v%-9s%s" version today)))
                     ((user-error "Abort"))))
-          (user-error "Unsupported CHANGELOG format"))))))
+          (insert (format "* v%-9sUNRELEASED\n\n" version)))))))
 
 (defun sisyphus--list-files ()
   "Return nested list of elisp libraries, packages and org files."
