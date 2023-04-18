@@ -7,7 +7,7 @@
 ;; Homepage: https://github.com/magit/sisyphus
 ;; Keywords: git tools vc
 
-;; Package-Version: 0.2.0
+;; Package-Version: 0.1.0.50-git
 ;; Package-Requires: ((emacs "28.1") (compat "29.1.4.1"))
 ;; This file is free software: you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published
@@ -187,7 +187,7 @@ With prefix argument NOCOMMIT, do not create a commit."
 (defun sisyphus-bump-post-release (version &optional nocommit)
   "Create a post-release commit, bumping VERSION strings.
 With prefix argument NOCOMMIT, do not create a commit."
-  (interactive (list (and (file-exists-p (expand-file-name "CHANGELOG"))
+  (interactive (list (and (sisyphus-resolve-changelog-file)
                           (sisyphus--read-version "Tentative next release"))
                      current-prefix-arg))
   (magit-with-toplevel
