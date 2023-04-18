@@ -8,8 +8,7 @@
 ;; Keywords: git tools vc
 
 ;; Package-Version: 0.1.0.50-git
-;; Package-Requires: ((emacs "28.1") (compat "29.1.4.1") (magit "3.4.0"))
-
+;; Package-Requires: ((emacs "28.1") (compat "29.1.4.1"))
 ;; This file is free software: you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published
 ;; by the Free Software Foundation, either version 3 of the License,
@@ -330,9 +329,11 @@ If STUB is non nil, insert as unreleased."
                       (and (equal lisp "lisp")
                            (directory-files "." t "-pkg\\.el\\'"))))
          (libs (cl-set-difference (directory-files lisp t "\\.el\\'") pkgs))
-         (orgs (cl-delete "README.org" (directory-files docs t "\\.org\\'")
-                          :test #'equal
-                          :key #'file-name-nondirectory)))
+         (orgs (cl-delete "CHANGELOG.org"
+                          (cl-delete "README.org" (directory-files docs t
+                                                                   "\\.org\\'")
+                                     :test #'equal
+                                     :key #'file-name-nondirectory))))
     (list libs pkgs orgs)))
 
 (defun sisyphus--rpartial (fun &rest args)
@@ -355,7 +356,7 @@ at the values with which this function was called."
                                  (file-name-sans-extension
                                   (file-name-nondirectory lib)))
                                 version))
-                        libs))
+                        (if (> (length libs) 1) libs nil)))
        (pkg-updates (if (string-suffix-p sisyphus--non-release-suffix version)
                         (let ((timestamp (format-time-string "%Y%m%d")))
                           (mapcar (pcase-lambda (`(,pkg ,_))
@@ -438,18 +439,21 @@ UPDATES should be the alist of dependencies."
 (defun sisyphus--bump-version-org (file version)
   "Update VERSION in org FILE."
   (sisyphus--with-file file
-    (re-search-forward "^#\\+subtitle: for version \\(.+\\)$")
-    (replace-match version t t nil 1)
-    (re-search-forward "^This manual is for [^ ]+ version \\(.+\\)\\.$")
-    (replace-match version t t nil 1))
-  (magit-call-process "make" "texi"))
+    (when (re-search-forward "^#\\+subtitle: for version \\(.+\\)$" nil t 1)
+      (replace-match version t t nil 1))
+    (when (re-search-forward "^This manual is for [^ ]+ version \\(.+\\)\\.$"
+                             nil t 1)
+      (replace-match version t t nil 1))
+    (when (directory-files default-directory nil ".texi")
+      (magit-call-process "make" "texi"))))
 
 (defun sisyphus--bump-copyright ()
   "Update copyright."
   (pcase-let ((`(,libs ,_ ,orgs)
                (sisyphus--list-files)))
     (mapc #'sisyphus--bump-copyright-lib libs)
-    (when orgs
+    (when (and orgs
+               (directory-files default-directory nil ".texi"))
       (magit-call-process "make" "clean" "texi" "all"))))
 
 (defun sisyphus--bump-copyright-lib (file)
