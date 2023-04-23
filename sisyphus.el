@@ -63,7 +63,6 @@
     (when-let ((suffix-idx (catch 'found
                              (dotimes (idx len)
                                (let ((group (nth idx layout)))
-                                 (print group)
                                  (when (and (vectorp group)
                                             (eq :description
                                                 (car-safe (aref group 2)))
