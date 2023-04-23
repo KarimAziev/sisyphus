@@ -82,11 +82,6 @@
               (list "Sisyphus")
               newval)))))
 
-(add-variable-watcher 'sisyphus-transient-suffixes
-                      'sisyphus-transient-suffixes-watcher)
-
-(sisyphus-transient-suffixes-watcher nil sisyphus-transient-suffixes nil nil)
-
 
 (defun sisyphus-header-multiline (header &optional extra)
   "Return the contents of the header named HEADER, with continuation lines.
@@ -474,6 +469,11 @@ UPDATES should be the alist of dependencies."
                (concat "--gpg-sign=" key))
            (transient-args 'magit-commit))
          (and allow-empty "--allow-empty"))))
+
+(add-variable-watcher 'sisyphus-transient-suffixes
+                      'sisyphus-transient-suffixes-watcher)
+
+(sisyphus-transient-suffixes-watcher nil sisyphus-transient-suffixes nil nil)
 
 ;;; _
 
