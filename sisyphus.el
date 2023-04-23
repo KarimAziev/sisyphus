@@ -34,9 +34,8 @@
 
 (require 'compat)
 (require 'copyright)
+(require 'transient)
 (require 'magit-tag)
-
-
 (require 'lisp-mnt)
 
 (defcustom sisyphus-transient-suffixes '(("c" "release commit"
