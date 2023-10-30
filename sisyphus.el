@@ -47,8 +47,8 @@
   "Suffixes to add in `magit-tag'."
   :group 'sisyphus
   :type '(repeat (list :tag "Rule"
-		                   (string :tag "Key")
-		                   (string :tag "Description")
+                       (string :tag "Key")
+                       (string :tag "Description")
                        (radio :tag "Command"
                               (function-item sisyphus-create-release)
                               (function-item sisyphus-bump-post-release)
@@ -97,13 +97,13 @@ single line, or the prefix used on continuation lines."
           (end (1+ (line-end-position)))
           (indent nil))
       (when lines
-	(setq lines (list lines))
-	(forward-line 1)
-	(while (looking-at "^;+\\(\t\\|[\t\s]\\{2,\\}\\)\\(.+\\)")
-	  (push (match-string-no-properties 2) lines)
+  (setq lines (list lines))
+  (forward-line 1)
+  (while (looking-at "^;+\\(\t\\|[\t\s]\\{2,\\}\\)\\(.+\\)")
+    (push (match-string-no-properties 2) lines)
           (unless indent
             (setq indent (match-string-no-properties 1)))
-	  (forward-line 1)
+    (forward-line 1)
           (setq end (point)))
         (setq lines (nreverse lines))
         (if extra (list lines beg end indent) lines)))))
@@ -269,6 +269,23 @@ With prefix argument NOCOMMIT, do not create a commit."
       (user-error "Version must increase, but %s is not greater than %s"
                   version prev))
     version))
+
+(defun sisyphus-insert-changelog (version)
+  "Update VERSION in changelog.
+If STUB is non nil, insert as unreleased."
+  (interactive (list (sisyphus--read-version "Version: ")))
+  (when-let* ((dir (magit-toplevel))
+              (file (or (sisyphus-resolve-changelog-file)
+                        (when (yes-or-no-p (format
+                                            "Create changelog file %s?"
+                                            (abbreviate-file-name
+                                             (expand-file-name
+                                              "CHANGELOG.org"
+                                              dir))))
+                          (expand-file-name "CHANGELOG.org" dir)))))
+    (unless (file-exists-p file)
+      (write-region (format "* v%-9sUNRELEASED\n\n" version) nil
+                    file))))
 
 (defun sisyphus--bump-changelog (version &optional stub)
   "Update VERSION in changelog.
@@ -475,12 +492,8 @@ UPDATES should be the alist of dependencies."
 
 (sisyphus-transient-suffixes-watcher nil sisyphus-transient-suffixes nil nil)
 
-;;; _
-
-;; Local Variables:
-;; indent-tabs-mode: nil
-;; checkdoc-verb-check-experimental-flag: nil
-;; End:
-;;; sisyphus.el ends here
 (provide 'sisyphus)
 ;;; sisyphus.el ends here
+;; Local Variables:
+;; checkdoc-verb-check-experimental-flag: nil
+;; End:
