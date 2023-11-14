@@ -216,10 +216,11 @@ With prefix argument NOCOMMIT, do not create a commit."
        (with-current-buffer (find-file-noselect ,file*)
          (save-excursion
            (goto-char (point-min))
-           (prog1 (progn ,@body)
-             (save-buffer)
-             (unless ,open*
-               (kill-buffer))))))))
+           (let ((inhibit-read-only t))
+             (prog1 (progn ,@body)
+               (save-buffer)
+               (unless ,open*
+                 (kill-buffer)))))))))
 
 ;;; Functions
 
@@ -402,7 +403,8 @@ UPDATES should be the alist of dependencies."
                                         (%)
                                         (length
                                          (symbol-name
-                                          (car %)))) deps)))))
+                                          (car %))))
+                                      deps)))))
           (while (setq dep (pop deps))
             (indent-to 4)
             (insert (format format (car dep)
@@ -411,7 +413,8 @@ UPDATES should be the alist of dependencies."
       (insert ")")
       (when props
         (let (key val)
-          (while (setq key (pop props) val (pop props))
+          (while (setq key (pop props)
+                       val (pop props))
             (insert (format "\n  %s %S" key val)))))
       (insert ")\n"))))
 
@@ -455,7 +458,7 @@ UPDATES should be the alist of dependencies."
     (when (re-search-forward "^This manual is for [^ ]+ version \\(.+\\)\\.$"
                              nil t 1)
       (replace-match version t t nil 1))
-    (when (directory-files default-directory nil ".texi")
+    (when (directory-files default-directory nil "\\.texi")
       (magit-call-process "make" "texi"))))
 
 (defun sisyphus--bump-copyright ()
@@ -464,7 +467,7 @@ UPDATES should be the alist of dependencies."
                (sisyphus--list-files)))
     (mapc #'sisyphus--bump-copyright-lib libs)
     (when (and orgs
-               (directory-files default-directory nil ".texi"))
+               (directory-files default-directory nil "\\.texi"))
       (magit-call-process "make" "clean" "texi" "all"))))
 
 (defun sisyphus--bump-copyright-lib (file)
