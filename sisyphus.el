@@ -274,8 +274,9 @@ With prefix argument NOCOMMIT, do not create a commit."
     version))
 
 (defun sisyphus-insert-changelog (version)
-  "Update VERSION in changelog.
-If STUB is non nil, insert as unreleased."
+  "Insert a changelog entry for the specified VERSION, creating the file if needed.
+
+Argument VERSION is the version string to be inserted into the changelog."
   (interactive (list (sisyphus--read-version "Version: ")))
   (when-let* ((dir (magit-toplevel))
               (file (or (sisyphus-resolve-changelog-file)
