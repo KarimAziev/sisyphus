@@ -119,9 +119,11 @@ single line, or the prefix used on continuation lines."
                (lm-with-file file
                  (sisyphus-header-multiline "package-requires" t))))
     (and-let* ((lines lines)
-               (value (package--prepare-dependencies
-                       (package-read-from-string
-                        (mapconcat #'identity lines " ")))))
+               (value
+                (when (fboundp 'package--prepare-dependencies)
+                  (package--prepare-dependencies
+                   (package-read-from-string
+                    (mapconcat #'identity lines " "))))))
       (if extra (list value beg end indent) value))))
 
 (defun sisyphus-update-package-requires (&optional file updates noerror)
