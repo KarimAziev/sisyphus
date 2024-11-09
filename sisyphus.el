@@ -59,7 +59,7 @@
   "Variable watcher to update transient prefix `magit-tag' with NEWVAL."
   (let* ((layout (get 'magit-tag 'transient--layout))
          (len (length layout)))
-    (when-let ((suffix-idx (catch 'found
+    (when-let* ((suffix-idx (catch 'found
                              (dotimes (idx len)
                                (let ((group (nth idx layout)))
                                  (when (and (vectorp group)
@@ -242,7 +242,7 @@ With prefix argument NOCOMMIT, do not create a commit."
 
 (defun sisyphus--get-changelog-version ()
   "Search for latest version in the changelog file."
-  (when-let ((file (sisyphus-resolve-changelog-file)))
+  (when-let* ((file (sisyphus-resolve-changelog-file)))
     (and (file-exists-p file)
          (sisyphus--with-file file
            (and (re-search-forward "^\\* v\\([^ ]+\\)" nil t)
@@ -304,7 +304,7 @@ If STUB is non nil, insert as unreleased."
                                               dir))))
                           (expand-file-name "CHANGELOG.org" dir)))))
     (unless (file-exists-p file)
-      (when-let ((prev (sisyphus--previous-version)))
+      (when-let* ((prev (sisyphus--previous-version)))
         (write-region (format "* v%-9sUNRELEASED\n\n" prev) nil
                       file)))
     (when (file-exists-p file)
