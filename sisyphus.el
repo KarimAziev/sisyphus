@@ -54,21 +54,34 @@
                               (function-item sisyphus-bump-post-release)
                               (function-item sisyphus-bump-copyright)))))
 
+(defun sisyphus--nth-safe (idx arr-or-list)
+  "Return the element at IDX from ARR-OR-LIST, safely handling lists or vectors.
+
+Argument IDX is an integer representing the position of the element to retrieve.
+
+Argument ARR-OR-LIST is either a list or a vector from which the element at
+position IDX is retrieved."
+  (cond ((listp arr-or-list)
+         (nth idx arr-or-list))
+        ((vectorp arr-or-list)
+         (aref arr-or-list idx))))
 
 (defun sisyphus-transient-suffixes-watcher (_symbol newval _operation _buffer)
   "Variable watcher to update transient prefix `magit-tag' with NEWVAL."
   (let* ((layout (get 'magit-tag 'transient--layout))
          (len (length layout)))
     (when-let* ((suffix-idx (catch 'found
-                             (dotimes (idx len)
-                               (let ((group (nth idx layout)))
-                                 (when (and (vectorp group)
-                                            (eq :description
-                                                (car-safe (aref group 2)))
-                                            (equal
-                                             (cadr (aref group 2))
-                                             "Sisyphus"))
-                                   (throw 'found idx)))))))
+                              (dotimes (idx len)
+                                (let ((group (sisyphus--nth-safe
+                                              idx
+                                              layout)))
+                                  (when (and (vectorp group)
+                                             (eq :description
+                                                 (car-safe (aref group 2)))
+                                             (equal
+                                              (cadr (aref group 2))
+                                              "Sisyphus"))
+                                    (throw 'found idx)))))))
       (transient-remove-suffix 'magit-tag (list suffix-idx))))
   (when newval
     (transient-append-suffix 'magit-tag
@@ -493,10 +506,10 @@ UPDATES should be the alist of dependencies."
            (transient-args 'magit-commit))
          (and allow-empty "--allow-empty"))))
 
-(add-variable-watcher 'sisyphus-transient-suffixes
-                      'sisyphus-transient-suffixes-watcher)
+;; (add-variable-watcher 'sisyphus-transient-suffixes
+;;                       'sisyphus-transient-suffixes-watcher)
 
-(sisyphus-transient-suffixes-watcher nil sisyphus-transient-suffixes nil nil)
+;; (sisyphus-transient-suffixes-watcher nil sisyphus-transient-suffixes nil nil)
 
 (provide 'sisyphus)
 ;;; sisyphus.el ends here
